@@ -5,8 +5,31 @@ import { file } from 'bun';
 import { CookieManager } from './services/cookie-manager';
 import { ProxyManager } from './services/proxy-manager';
 import { TweetConfigLoader } from './services/tweet-config-loader';
-import { type MediaData, type ScheduleOptions } from './types/types';
+import { type ScheduleOptions } from './types/types';
 import { getMimeType } from './utils/mime-types';
+
+// Define interface for scraper options since it's not exported
+interface ScraperInit {
+  proxyUrl?: string;
+}
+
+class Logger {
+  static info(message: string, data?: any) {
+    console.log(`[INFO] ${new Date().toISOString()} - ${message}`, data ? data : '');
+  }
+
+  static error(message: string, error?: any) {
+    console.error(`[ERROR] ${new Date().toISOString()} - ${message}`, error ? error : '');
+  }
+
+  static warn(message: string, data?: any) {
+    console.warn(`[WARN] ${new Date().toISOString()} - ${message}`, data ? data : '');
+  }
+
+  static success(message: string) {
+    console.log(`[SUCCESS] ${new Date().toISOString()} - ✓ ${message}`);
+  }
+}
 
 export class TwitterClient {
   private scraper: Scraper;
@@ -15,26 +38,33 @@ export class TwitterClient {
   private readonly MIN_DELAY_MINUTES = 2;
 
   constructor (cookiesPath = './twitter_cookies.json', cookieExpirationHours = 24, proxyUrl?: string) {
+    this.proxyManager = new ProxyManager(proxyUrl);
+
+    // Initialize scraper with proxy settings if available
+    const scraperInit: ScraperInit = {};
+    if (proxyUrl) {
+      scraperInit.proxyUrl = proxyUrl;
+    }
+
     this.scraper = new Scraper();
     this.cookieManager = new CookieManager(cookiesPath, cookieExpirationHours);
-    this.proxyManager = new ProxyManager(proxyUrl);
   }
 
   async login(): Promise<void> {
     try {
-      console.log('\nAttempting authentication...');
+      Logger.info('Initiating authentication process');
       const storedCookies = await this.cookieManager.loadCookies();
 
       if (storedCookies && this.cookieManager.areCookiesValid(storedCookies)) {
-        console.log('Found valid stored cookies from:', new Date(storedCookies.timestamp).toLocaleString());
+        Logger.info('Found stored cookies', { timestamp: new Date(storedCookies.timestamp).toLocaleString() });
+
         try {
-          // Remove unused proxyUrl variable
           await this.scraper.setCookies(storedCookies.cookies);
-          console.log('✓ Successfully authenticated using stored cookies');
+          Logger.success('Authentication successful using stored cookies');
           return;
         } catch (error) {
-          console.log('⚠ Stored cookies are invalid or expired');
-          console.log('Falling back to credential-based authentication...');
+          Logger.warn('Stored cookies are invalid or expired');
+          Logger.info('Attempting credential-based authentication');
         }
       }
 
@@ -42,79 +72,93 @@ export class TwitterClient {
 
       const newCookies = await this.scraper.getCookies();
       await this.cookieManager.saveCookies(newCookies);
-      console.log('✓ Successfully authenticated using credentials');
-      console.log('New cookies have been stored for future use\n');
+      Logger.success('Authentication successful using credentials');
     } catch (error) {
-      console.error('Login failed:', error);
+      Logger.error('Authentication failed', error);
       throw error;
     }
   }
 
   async sendTweet(content: string, mediaPaths: string[] = []): Promise<void> {
     try {
-      let mediaData: MediaData[] | undefined;
+      Logger.info('Preparing to send tweet', {
+        contentLength: content.length,
+        hasMedia: mediaPaths.length > 0,
+        mediaCount: mediaPaths.length
+      });
+
       if (mediaPaths.length > 0) {
-        mediaData = await Promise.all(mediaPaths.map(async (path): Promise<MediaData> => {
-          const extension = path.split('.').pop()?.toLowerCase();
-          const mimeType = getMimeType(extension);
+        Logger.info('Processing media files', { paths: mediaPaths });
+        const mediaData = await Promise.all(
+          mediaPaths.map(async (path): Promise<{ data: Buffer, mediaType: string }> => {
+            const extension = path.split('.').pop()?.toLowerCase();
+            const mimeType = getMimeType(extension);
 
-          if (!mimeType) {
-            throw new Error(`Unsupported media type for file: ${path}`);
-          }
+            if (!mimeType) {
+              Logger.error(`Unsupported media type`, { path, extension });
+              throw new Error(`Unsupported media type for file: ${path}`);
+            }
 
-          const f = file(path);
-          const data = await f.arrayBuffer();
+            Logger.info(`Processing media file`, { path, mimeType });
+            const f = file(path);
+            const data = Buffer.from(await f.arrayBuffer());
+            return { data, mediaType: mimeType };
+          })
+        );
 
-          return { data, mediaType: mimeType };
-        }));
+        await this.scraper.sendTweet(content, undefined, mediaData);
+      } else {
+        await this.scraper.sendTweet(content);
       }
 
-      await this.scraper.sendTweet(content, undefined);
-      console.log('Tweet posted successfully');
+      Logger.success('Tweet posted successfully');
     } catch (error) {
-      console.error('Error sending tweet:', error);
+      Logger.error('Failed to send tweet', error);
       throw error;
     }
   }
 
   async sendConfiguredTweets(configPath: string, options: ScheduleOptions): Promise<void> {
     try {
+      Logger.info('Loading tweet configuration', { configPath, options });
       const tweets = await TweetConfigLoader.loadTweetsConfig(configPath);
       const delayMinutes = Math.max(options.delayMinutes, this.MIN_DELAY_MINUTES);
       const delayMs = delayMinutes * 60 * 1000;
 
-      console.log(`Delay set to ${delayMinutes} minutes (${delayMs} milliseconds)`);
-      const tweetsToSend = options.tweetCount > 0 ? tweets.slice(0, options.tweetCount) : tweets;
-
-      console.log(`Starting tweet schedule:`);
-      console.log(`- Will send ${tweetsToSend.length} tweets`);
-      console.log(`- Delay between tweets: ${options.delayMinutes} minutes`);
       if (options.proxyUrl) {
-        console.log(`- Using proxy: ${options.proxyUrl}`);
+        Logger.info('Updating proxy configuration', { proxyUrl: options.proxyUrl });
+        this.proxyManager.updateProxyUrl(options.proxyUrl);
       }
+
+      const tweetsToSend = options.tweetCount > 0 ? tweets.slice(0, options.tweetCount) : tweets;
+      Logger.info('Preparing tweet schedule', { totalTweets: tweetsToSend.length, delayMinutes });
 
       for (let i = 0;i < tweetsToSend.length;i++) {
         const tweet = tweetsToSend[i];
         const nextTweetTime = new Date(Date.now() + (i === 0 ? 0 : delayMs));
 
-        console.log(`\nTweet ${i + 1}/${tweetsToSend.length}:`);
-        console.log(`Current time: ${new Date().toLocaleTimeString()}`);
-        console.log(`Scheduled time: ${nextTweetTime.toLocaleTimeString()}`);
-        console.log(`Content: ${tweet.content}`);
+        Logger.info(`Processing tweet ${i + 1}/${tweetsToSend.length}`, {
+          scheduledTime: nextTweetTime.toLocaleTimeString(),
+          content: tweet.content,
+          mediaCount: tweet.mediaPaths?.length || 0
+        });
 
         if (i > 0) {
-          console.log(`Waiting ${delayMinutes} minutes before sending...`);
+          Logger.info(`Waiting ${delayMinutes} minutes before next tweet`);
           await new Promise(resolve => setTimeout(resolve, delayMs));
-          console.log(`Wait complete, sending tweet...`);
         }
 
         await this.sendTweet(tweet.content, tweet.mediaPaths || []);
       }
 
-      console.log('\nAll configured tweets have been sent successfully');
+      Logger.success('All configured tweets have been sent successfully');
     } catch (error) {
-      console.error('Error sending configured tweets:', error);
+      Logger.error('Failed to send configured tweets', error);
       throw error;
     }
+  }
+
+  cleanup(): void {
+    this.proxyManager.shutdown();
   }
 }

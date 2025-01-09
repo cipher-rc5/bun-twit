@@ -67,10 +67,10 @@ TWITTER_2FA_SECRET=your_2fa_secret
 ## usage
 
 Running the Bot
-To execute the bot and post tweets:
+To execute the bot and post all tweets with a two minute(default delay):
 
 ```sh
-bun run twitter-client.ts
+bun run src/cli.ts
 ```
 
 CLI Options
@@ -86,7 +86,22 @@ Example:
 bun run src/cli.ts --delay 5 --count 3 --proxy http://proxy.example.com
 ```
 
-## Tweet Configuration
+Advanced Options
+Customize tweet scheduling with command-line arguments:
+
+### send 5 tweets with 3-minute delays
+
+```sh
+bun run src/cli.ts --count 5 --delay 3min
+```
+
+### use a proxy server
+
+```sh
+bun run src/cli.ts --proxy http://your-proxy-url:port
+```
+
+## tweet configuration
 
 Tweets are stored in tweets.json. Each tweet includes the following fields:
 
@@ -103,3 +118,48 @@ Example:
   "hashtags": ["#LemurLife", "#MortKnowsBest"]
 }]
 ```
+
+## development
+
+### project Structure
+
+bun-twit/
+├── .env.example # Environment variable template
+├── tweets.json # Pre-configured tweets
+├── src/
+│ ├── cli.ts # CLI entry point
+│ ├── twitter-client.ts # Twitter client logic
+│ ├── services/ # Modular service files
+│ │ ├── cookie-manager.ts
+│ │ ├── proxy-manager.ts
+│ │ ├── tweet-config-loader.ts
+│ ├── utils/ # Utility functions
+│ │ ├── mime-types.ts
+│ │ ├── time-parser.ts
+│ ├── types/ # Type definitions
+│ ├── types.ts
+
+### Cookie Management
+
+The client automatically manages Twitter authentication cookies:
+
+- Cookies are stored in twitter_cookies.json
+- Default cookie expiration is 24 hours
+- Failed cookie authentication falls back to credential login
+
+### Media Support
+
+Supported media formats:
+
+- Images: .jpg, .jpeg, .png
+- Animated: .gif
+- Video: .mp4
+
+### Error Handling
+
+The client includes robust error handling for:
+
+- Authentication failures
+- Network issues
+- Invalid media types
+- Configuration errors
