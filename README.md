@@ -2,7 +2,7 @@
 
 ## overview
 
-**bun-twit** is a lightweight, developer-friendly Twitter bot built with [Bun](https://bun.sh), designed to automate tweet scheduling and interaction. The bot leverages the `agent-twitter-client` library for Twitter scraping and supports cookie-based authentication, proxy configuration, and tweet scheduling from a JSON file.
+**bun-twit** is a lightweight, developer-friendly Twitter interfacing unit built with [Bun](https://bun.sh), designed to automate tweet scheduling and interaction. The instance leverages the ElizaOS `agent-twitter-client` library for Twitter scraping and supports cookie-based authentication, proxy configuration, and tweet scheduling from a JSON file.
 
 ---
 
@@ -123,6 +123,7 @@ Example:
 
 ### project Structure
 
+```
 bun-twit/
 ├── .env.example # Environment variable template
 ├── tweets.json # Pre-configured tweets
@@ -138,6 +139,7 @@ bun-twit/
 │ │ ├── time-parser.ts
 │ ├── types/ # Type definitions
 │ ├── types.ts
+```
 
 ### Cookie Management
 

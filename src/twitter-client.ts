@@ -8,7 +8,6 @@ import { TweetConfigLoader } from './services/tweet-config-loader';
 import { type ScheduleOptions } from './types/types';
 import { getMimeType } from './utils/mime-types';
 
-// Define interface for scraper options since it's not exported
 interface ScraperInit {
   proxyUrl?: string;
 }

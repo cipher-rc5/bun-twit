@@ -45,7 +45,6 @@ export class ProxyManager {
   }
 
   async rotateProxy(): Promise<string | undefined> {
-    // Simple implementation - you can extend this with more sophisticated rotation logic
     return this.getCurrentProxy();
   }
 
